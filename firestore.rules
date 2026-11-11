@@ -1,0 +1,272 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Global Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'defaultReminderDays', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'defaultReminderDays', 'createdAt', 'updatedAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && data.defaultReminderDays is int
+        && data.defaultReminderDays >= 1
+        && data.defaultReminderDays <= 365
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'updatedAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 160
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDocumentCategory(cat) {
+      return cat in [
+        'Identity & Travel',
+        'Insurance',
+        'Contracts & Legal',
+        'Licenses & Permits',
+        'Certifications',
+        'Tax & Financial',
+        'Medical & Health',
+        'Warranty & Property',
+        'Other'
+      ];
+    }
+
+    function isValidDocumentStatus(status) {
+      return status in ['Active', 'Expiring Soon', 'Expired'];
+    }
+
+    function isValidMimeType(mime) {
+      return mime in ['application/pdf', 'image/jpeg', 'image/png'];
+    }
+
+    function isValidIsoDate(dateStr) {
+      return dateStr is string
+        && dateStr.size() == 10
+        && dateStr.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidDocument(data) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'category', 'issueDate', 'expiryDate',
+          'reminderDaysBefore', 'status', 'fileName', 'fileType',
+          'fileSize', 'storagePath', 'fileUrl', 'notes',
+          'reminderDismissed', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'category', 'issueDate', 'expiryDate',
+          'reminderDaysBefore', 'status', 'fileName', 'fileType',
+          'fileSize', 'storagePath', 'fileUrl', 'notes',
+          'reminderDismissed', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 140
+        && data.category is string
+        && data.category.size() >= 1
+        && data.category.size() <= 60
+        && isValidDocumentCategory(data.category)
+        && isValidIsoDate(data.issueDate)
+        && isValidIsoDate(data.expiryDate)
+        && data.issueDate <= data.expiryDate
+        && data.reminderDaysBefore is int
+        && data.reminderDaysBefore >= 1
+        && data.reminderDaysBefore <= 365
+        && data.status is string
+        && data.status.size() >= 6
+        && data.status.size() <= 16
+        && isValidDocumentStatus(data.status)
+        && data.fileName is string
+        && data.fileName.size() <= 255
+        && data.fileType is string
+        && data.fileType.size() <= 20
+        && (data.fileType == '' || isValidMimeType(data.fileType))
+        && data.fileSize is int
+        && data.fileSize >= 0
+        && data.fileSize <= 10485760
+        && data.storagePath is string
+        && data.storagePath.size() <= 512
+        && (
+          data.storagePath == '' ||
+          data.storagePath.matches('^users/' + request.auth.uid + '/documents/[a-zA-Z0-9_\\-]+/.+$')
+        )
+        && data.fileUrl is string
+        && data.fileUrl.size() <= 2048
+        && (data.fileUrl == '' || data.fileUrl.matches('^https?://.+$'))
+        && data.notes is string
+        && data.notes.size() <= 1000
+        && data.reminderDismissed is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection: /users/{userId} ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidUserProfile(incoming()) && (
+        isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update default reminder lead days
+          incoming().diff(existing()).affectedKeys().hasOnly(['defaultReminderDays', 'updatedAt']) ||
+          // Action: Update display name & preferences
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'defaultReminderDays', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
+
+      // Subcollection: /users/{userId}/private/{infoId} (PII Isolation)
+      match /private/{infoId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(infoId)
+          && isOwner(userId)
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+        allow list: if false;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(infoId)
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == userId
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+
+        allow update: if isValidUserPrivateInfo(incoming()) && (
+          isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(infoId)
+          && isOwner(userId)
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt'])
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid
+        );
+
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(infoId)
+          && isOwner(userId);
+      }
+    }
+
+    // --- Collection: /documents/{documentId} ---
+    match /documents/{documentId} {
+      allow get: if isSignedIn()
+        && isValidId(documentId)
+        && existing().ownerId == request.auth.uid;
+
+      allow list: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(documentId)
+        && isValidDocument(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      allow update: if isValidDocument(incoming()) && (
+        isVerifiedUser()
+        && isValidId(documentId)
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Edit document metadata, expiry dates & optional external link
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'category', 'issueDate', 'expiryDate',
+            'reminderDaysBefore', 'status', 'fileUrl', 'notes',
+            'reminderDismissed', 'updatedAt'
+          ]) ||
+          // Action 2: Replace document file & update metadata
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'category', 'issueDate', 'expiryDate',
+            'reminderDaysBefore', 'status', 'notes',
+            'reminderDismissed', 'fileName', 'fileType',
+            'fileSize', 'storagePath', 'fileUrl', 'updatedAt'
+          ]) ||
+          // Action 3: Mark notification as read or unread
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'reminderDismissed', 'updatedAt'
+          ]) ||
+          // Action 4: Automatically synchronize status when current date crosses threshold
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'updatedAt'
+          ]) ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'reminderDismissed', 'updatedAt'
+          ])
+        )
+      );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(documentId)
+        && existing().ownerId == request.auth.uid;
+    }
+  }
+}

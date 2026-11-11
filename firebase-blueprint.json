@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Personal workspace preferences for an authenticated DocuPing user",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "User display name"
+        },
+        "defaultReminderDays": {
+          "type": "integer",
+          "description": "Default lead window in days before expiry (1-365)"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "defaultReminderDays",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Strictly owner-isolated private PII record for an authenticated DocuPing user",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160,
+          "description": "Verified account email"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "updatedAt"
+      ]
+    },
+    "DocumentRecord": {
+      "title": "DocumentRecord",
+      "description": "Tracked document metadata and Storage reference owned by a single user",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase Auth UID"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Human-readable document title"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "enum": [
+            "Identity & Travel",
+            "Insurance",
+            "Contracts & Legal",
+            "Licenses & Permits",
+            "Certifications",
+            "Tax & Financial",
+            "Medical & Health",
+            "Warranty & Property",
+            "Other"
+          ],
+          "description": "Document category"
+        },
+        "issueDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Issue date in YYYY-MM-DD format"
+        },
+        "expiryDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Expiry date in YYYY-MM-DD format"
+        },
+        "reminderDaysBefore": {
+          "type": "integer",
+          "description": "Lead time in days to trigger Expiring Soon status (1-365)"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 16,
+          "enum": [
+            "Active",
+            "Expiring Soon",
+            "Expired"
+          ],
+          "description": "Computed expiry classification"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 255,
+          "description": "Original uploaded file name (empty when tracked without binary upload)"
+        },
+        "fileType": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20,
+          "enum": [
+            "",
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+          ],
+          "description": "Validated MIME type or empty string when no file is attached"
+        },
+        "fileSize": {
+          "type": "integer",
+          "description": "Uploaded file size in bytes (0 when metadata-only, up to 10485760)"
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512,
+          "description": "External or Storage object path (empty when metadata-only)"
+        },
+        "fileUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2048,
+          "description": "Optional HTTPS link to the document file"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000,
+          "description": "Optional renewal notes or policy reference"
+        },
+        "reminderDismissed": {
+          "type": "boolean",
+          "description": "Whether current upcoming reminder alert was acknowledged"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "category",
+        "issueDate",
+        "expiryDate",
+        "reminderDaysBefore",
+        "status",
+        "fileName",
+        "fileType",
+        "fileSize",
+        "storagePath",
+        "fileUrl",
+        "notes",
+        "reminderDismissed",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "User workspace preferences keyed by Firebase Auth UID"
+    },
+    "/users/{userId}/private/{infoId}": {
+      "schema": {
+        "$ref": "#/entities/UserPrivateInfo"
+      },
+      "description": "Owner-only PII record for user email"
+    },
+    "/documents/{documentId}": {
+      "schema": {
+        "$ref": "#/entities/DocumentRecord"
+      },
+      "description": "User-owned document metadata records"
+    }
+  }
+}

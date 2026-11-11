@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/documents/{documentId}/{fileName} {
+      allow read: if request.auth != null
+                   && request.auth.uid == userId
+                   && userId.size() <= 128
+                   && documentId.size() <= 128
+                   && fileName.size() <= 255;
+
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            && request.auth.token.email_verified == true
+                            && userId.size() <= 128
+                            && documentId.size() <= 128
+                            && fileName.size() <= 255
+                            && request.resource != null
+                            && request.resource.size > 0
+                            && request.resource.size <= 10 * 1024 * 1024
+                            && request.resource.contentType.matches('application/pdf|image/jpeg|image/png');
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.auth.token.email_verified == true
+                    && userId.size() <= 128
+                    && documentId.size() <= 128
+                    && fileName.size() <= 255;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

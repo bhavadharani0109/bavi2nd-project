@@ -1,0 +1,8 @@
+{
+  "name": "DocuPing – Smart Document Expiry Tracker",
+  "description": "Smart document expiry tracking dashboard with Firebase Authentication, Cloud Firestore metadata storage, Firebase Storage uploads, automated expiry status calculation, reminders, and CSV export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
